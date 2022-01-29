@@ -338,19 +338,21 @@ static void print_help(sx_cmdline_context* ctx)
     exit(0);
 }
 
-static shader_lang parse_shader_lang(const char* arg)
+static shader_lang parse_shader_lang(const char* arg, int* const result)
 {
     if (sx_strequalnocase(arg, "metal"))
         arg = "msl";
 
     for (int i = 0; i < SHADER_LANG_COUNT; i++) {
         if (sx_strequalnocase(k_shader_types[i], arg)) {
+            *result = 0;
             return (shader_lang)i;
         }
     }
 
     puts("Invalid shader type");
-    exit(-1);
+    *result = -1;
+    return (shader_lang)-1;
 }
 
 static output_error_format parse_output_errorformat(const char* arg)
@@ -1754,7 +1756,7 @@ static void detect_input_file(cmd_args* args, const char* file)
     }
 }
 
-int main(int argc, char* argv[])
+extern "C" __declspec(dllexport) int glslcc(int argc, char* argv[])
 {
     cmd_args args = {};
     args.lang = SHADER_LANG_COUNT;
@@ -1804,11 +1806,11 @@ int main(int argc, char* argv[])
             break;
         case '?':
             printf("Unknown argument: %s\n", arg);
-            exit(-1);
+            return -1;
             break;
         case '!':
             printf("Invalid use of argument: %s\n", arg);
-            exit(-1);
+            return -1;
             break;
         case 'v':
             args.vs_filepath = arg;
@@ -1826,7 +1828,12 @@ int main(int argc, char* argv[])
             parse_defines(&args, arg);
             break;
         case 'l':
-            args.lang = parse_shader_lang(arg);
+            int parse_shader_lang_result;
+            args.lang = parse_shader_lang(arg, &parse_shader_lang_result);
+            if(parse_shader_lang_result != 0)
+            {
+                return parse_shader_lang_result;
+            }
             break;
         case 'h':
             print_help(cmdline);
@@ -1857,37 +1864,37 @@ int main(int argc, char* argv[])
 
     if (version) {
         print_version();
-        exit(0);
+        return -2;
     }
 
     if (dump_conf) {
         puts(get_default_conf_str().c_str());
-        exit(0);
+        return -2;
     }
 
     if ((args.vs_filepath && !sx_os_path_isfile(args.vs_filepath)) || (args.fs_filepath && !sx_os_path_isfile(args.fs_filepath)) || (args.cs_filepath && !sx_os_path_isfile(args.cs_filepath))) {
         puts("Input files are invalid");
-        exit(-1);
+        return-1;
     }
 
     if (!args.vs_filepath && !args.fs_filepath && !args.cs_filepath) {
         puts("You must at least define one input shader file");
-        exit(-1);
+        return-1;
     }
 
     if (args.cs_filepath && (args.vs_filepath || args.fs_filepath)) {
         puts("Cannot link compute-shader with either fragment shader or vertex shader");
-        exit(-1);
+        return-1;
     }
 
     if (args.out_filepath == nullptr && !(args.preprocess | args.validate | args.list_includes)) {
         puts("Output file is not specified");
-        exit(-1);
+        return -1;
     }
 
     if (args.lang == SHADER_LANG_COUNT && !(args.preprocess | args.validate | args.list_includes)) {
         puts("Shader language is not specified");
-        exit(-1);
+        return -1;
     }
 
     if (args.out_filepath) {
@@ -1919,7 +1926,7 @@ int main(int argc, char* argv[])
     // Windows + HLSL -> works but requires ENABLE_D3D11_COMPILER
     else if (args.compile_bin) {
         puts("Cannot compile to byte-code, glslcc is not built with ENABLE_D3D11_COMPILER flag");
-        exit(-1);
+        return -1;
     }
 #endif
 #else
@@ -1964,4 +1971,9 @@ int main(int argc, char* argv[])
     sx_cmdline_destroy_context(cmdline, g_alloc);
     cleanup_args(&args);
     return r;
+}
+
+int main(int argc, char* argv[])
+{
+    return glslcc(argc, argv);
 }
